@@ -10,12 +10,12 @@ import csv
 
 
 
-
 if(len(sys.argv)<3):
 	print("Please enter your username and password when running script")
 	sys.exit()
 username = sys.argv[1]
 pwd = sys.argv[2]
+
 
 URL = 'https://broadway.bank/'
 driver = webdriver.Safari()
@@ -35,16 +35,38 @@ time.sleep(10)
 save = driver.find_element_by_xpath('//*[@id="M_layout_content_PCDZ_M4HNZU6_ctl00_webInputForm_btnSave"]')
 save.send_keys(Keys.ENTER)
 
-time.sleep(5)
+time.sleep(10)
 account = driver.find_element_by_xpath('//*[@id="accountSummaryController_c"]/div[1]/div/ul/li[2]/label/div/div[1]/span/span[1]')
 account.click()
 
 time.sleep(5)
+
 try:
+	expenses = 0
+	heb = 0
+	venmo = 0
 	table = driver.find_element_by_xpath('/html/body/form/div[3]/div[3]/div[3]/div[1]/div[4]/div[6]/div[3]/div[5]/div[2]/div/div[4]/table[2]/tbody')
 	for row in table.find_elements_by_xpath('.//tr'):
+		count = 1
+		charge = ""
 		for cell in row.find_elements_by_xpath('.//td'):
-			print(cell.text)
+			if count==2:
+				charge_description = cell.text
+			elif count==3 and len(cell.text) > 2:
+				charge = (cell.text[1:]).replace(',','')
+				if "H-E-B" in charge_description:
+					heb += float(charge)
+				if "VENMO" in charge_description:
+					venmo += float(charge)
+				if not "IB XFER" in charge_description:
+					expenses += float(charge)
+					print(charge_description, charge)
+			#print(cell.text)
+			count += 1
+	print("Total expenses: %", expenses)
+	print("HEB total: ", heb)
+	print("Venmo total: ", venmo)
+
 except Exception as err:
 	print(err)
 
