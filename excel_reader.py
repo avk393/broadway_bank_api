@@ -96,12 +96,14 @@ def webscrape(browser, charge_info):
 		results = browser.find_elements_by_class_name('YhemCb')
 		classification = results[1].text
 		if 'bar' or 'restaurant' or 'lounge' in classification:
-			print(charge_descr, classification)
+			#print(charge_descr, classification)
 			return True
 		else:
 			return False
 
 	except Exception:
+		return False
+	except IndexError:
 		return False
 	
 
