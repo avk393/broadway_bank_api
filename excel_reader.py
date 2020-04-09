@@ -2,6 +2,10 @@ import sys
 import csv
 import pandas as pd
 import matplotlib.pyplot as plot
+from selenium.webdriver import Firefox
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.by import By
 
 
 arguments = 3
@@ -73,19 +77,38 @@ def compare_dates(fd,sd):
 	#print("return 2")
 	return 2	
 
+def webscrape(browser, charge_info):
+	# formatting bank charge description for google to digest it easier
+	charge_descr = charge_info[4:]
+	if 'VIS' in charge_descr:
+		i = charge_descr.index('VIS')
+		charge_descr = charge_descr[0:i]
+
+	browser.implicitly_wait(3)
+	browser.get('https://google.com')
+	browser.implicitly_wait(3)
+	search_form = browser.find_element_by_xpath("//input[@name='q']")
+	search_form.send_keys(charge_descr)
+	search_form.submit()
+
+	browser.implicitly_wait(3)
+	try:
+		results = browser.find_elements_by_class_name('YhemCb')
+		classification = results[1].text
+		if 'bar' or 'restaurant' or 'lounge' in classification:
+			print(charge_descr, classification)
+			return True
+		else:
+			return False
+
+	except Exception:
+		return False
+	
+
+
 
 
 def main(): 
-
-	if(len(sys.argv)<arguments):
-		print("Please enter your start date and end date as arguments when running script")
-		sys.exit()
-	#add error handling here
-	start_date = sys.argv[1].split('/')
-	end_date = sys.argv[2].split('/')
-	if (check_input_format(start_date) and check_input_format(end_date)) == False: 
-		print("Please enter valid dates in the following format: Month/Day/Year")
-		sys.exit()
 
 	statement = pd.read_csv('export_20200402.csv')
 	data = statement.drop(['Comments','Check Number'], axis=1)
@@ -94,25 +117,32 @@ def main():
 	max_date = data.max()['Date'].split('/')
 	# earliest date on spreadsheet
 	min_date = data.min()['Date'].split('/')
-
 	max_date = [int(i) for i in max_date]
 	min_date = [int(i) for i in min_date]
-	start_date = [int(i) for i in start_date]
-	end_date = [int(i) for i in end_date]
-	
-	if compare_dates(format_date(start_date),format_date(max_date))==0 or compare_dates(format_date(end_date),format_date(min_date))==1:
-		print("Don't have the data for these dates")
-		sys.exit()
-	if compare_dates(format_date(start_date), format_date(min_date)) == 1:
-		start_date = min_date
-		print("Earliest date on record is: ", start_date)
-	if compare_dates(format_date(end_date), format_date(max_date)) == 0:
-		end_date = max_date
-		print("Most recent date on record: ", end_date)
+	start_date = min_date
+	end_date = max_date
+
+	if len(sys.argv)==date_format:
+		#add error handling here
+		start_date = sys.argv[1].split('/')
+		end_date = sys.argv[2].split('/')
+		if (check_input_format(start_date) and check_input_format(end_date)) == False: 
+			print("Please enter valid dates in the following format: Month/Day/Year")
+			sys.exit()
+			
+		start_date = [int(i) for i in start_date]
+		end_date = [int(i) for i in end_date]
+		if compare_dates(format_date(start_date),format_date(max_date))==0 or compare_dates(format_date(end_date),format_date(min_date))==1:
+			print("Don't have the data for these dates")
+			sys.exit()
+		if compare_dates(format_date(start_date), format_date(min_date)) == 1:
+			start_date = min_date
+			print("Earliest date on record is: ", start_date)
+		if compare_dates(format_date(end_date), format_date(max_date)) == 0:
+			end_date = max_date
+			print("Most recent date on record: ", end_date)
 
 	# filtering out dates user didn't ask for
-	#indeces = list(data.index)
-	separator = -1
 	# filtering to match start date
 	to_drop = []
 	for i in list(data.index):
@@ -124,27 +154,28 @@ def main():
 	# filtering to match end date
 	for j in reversed(list(data.index)):
 		temp_date = data.iloc[j]['Date'].split('/')
-		data_date = [int(k) for k in temp_date]
+		data_date = [int(z) for z in temp_date]
 		if compare_dates(format_date(end_date),format_date(data_date))!=1:
 			break
 		to_drop.append(j)
 
-	print(to_drop)
 	if len(to_drop) > 0:
 		data = data.drop(to_drop)
-	print(data)
-
-	#filtering to match end date
-	
 	#print(data)
+
 
 	# need to include charges on credit card statement also later
 	# categorizing data 
-	"""
 	charge_categories = ['Rent/Utilities', 'Venmo', 'Groceries', 'GasStation', 'Restaurants', 'Miscellaneous']
 	grouped_charges = pd.DataFrame(index=[0])
 	for cat in charge_categories:
 		grouped_charges[cat] = float(0)
+
+	# initializing browser to check restaurants
+	opts = Options()
+	opts.set_headless()
+	assert opts.headless  # Operating in headless mode
+	browser = Firefox(executable_path=r"/usr/local/Cellar/geckodriver/0.26.0/bin/geckodriver", options=opts)
 
 	for i in range(len(data)):
 		charge_amount_str = data.iloc[i]['Amount'].replace(',','')
@@ -159,10 +190,16 @@ def main():
 				grouped_charges.at[0, 'Venmo'] = grouped_charges.iloc[0]['Venmo']+charge_amount
 			elif "EXXONMOBIL" in charge_info or "SHELL" in charge_info or "ROSEDALE" in charge_info:
 				grouped_charges.at[0, 'GasStation'] = grouped_charges.iloc[0]['GasStation']+charge_amount
+			elif webscrape(browser, charge_info)==True:
+				grouped_charges.at[0, 'Restaurants'] = grouped_charges.iloc[0]['Restaurants']+charge_amount
 			else:
+				if "IB XFER" in charge_info:
+					continue
+				#print(charge_info, charge_amount)
 				grouped_charges.at[0, 'Miscellaneous'] = grouped_charges.iloc[0]['Miscellaneous']+charge_amount
+	
+	browser.quit()
 	print(grouped_charges)
-	"""
 	
 
 
@@ -183,6 +220,9 @@ Stripe API for transactions
 *** Create a date class at some point
 *** Find an already trained model to make predictions for classifying bank charges, and if possible, predicting future expenditures
 *** Find GUI API to display info
+*** Have user set budget, be able to tell user where they did not meet their goals
+
+https://www.mint.com/
 
 with open('export_20200402.csv') as csvfile:
 	reader = csv.reader(csvfile)
